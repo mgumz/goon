@@ -1,44 +1,71 @@
-VERSION=0.1.0
+VERSION=$(shell cat VERSION)
 BUILD_DATE=$(shell date -u +"%Y-%m-%dT%H:%M:%SZ")
 GIT_HASH=$(shell git rev-parse HEAD)
 
-BINARIES=bin/goon-$(VERSION).linux.amd64 \
-		 bin/goon-$(VERSION).linux.386 \
-		 bin/goon-$(VERSION).linux.arm64 \
-		 bin/goon-$(VERSION).linux.mips64 \
-		 bin/goon-$(VERSION).windows.amd64.exe \
-		 bin/goon-$(VERSION).freebsd.amd64 \
-		 bin/goon-$(VERSION).darwin.amd64
+TARGETS=linux.amd64 linux.386 linux.arm64 linux.mips64 windows.amd64.exe darwin.amd64 darwin.arm64 freebsd.amd64
+BINARIES=$(addprefix bin/goon-$(VERSION)., $(TARGETS))
+RELEASES=$(subst windows.amd64.tar.gz,windows.amd64.zip,$(foreach r,$(subst .exe,,$(TARGETS)),releases/goon-$(VERSION).$(r).tar.gz))
 
+LDFLAGS=-X main.version=$(VERSION) -X main.buildDate=$(BUILD_DATE) -X main.gitHash=$(GIT_HASH)
 
-LDFLAGS=-ldflags "-X main.Version=$(VERSION) -X main.BuildDate=$(BUILD_DATE) -X main.GitHash=$(GIT_HASH)"
+bin/goon: bin
+	go build -o $@ .
 
+binaries: $(BINARIES)
+releases: $(RELEASES)
+	make $(RELEASES)
 
-simple:
-	go build -o goon main.go
+bin/goon-$(VERSION).%:
+	env GOARCH=$(subst .,,$(suffix $(subst .exe,,$@))) \
+		GOOS=$(subst .,,$(suffix $(basename $(subst .exe,,$@)))) \
+		CGO_ENABLED=0 \
+		go build -ldflags "$(LDFLAGS)" -o $@ .
 
-release: $(BINARIES)
+releases/goon-$(VERSION).%.zip: bin/goon-$(VERSION).%.exe
+	mkdir -p releases
+	zip -9 -j -r $@ README.md $<
+releases/goon-$(VERSION).%.tar.gz: bin/goon-$(VERSION).%
+	mkdir -p releases
+	tar -cf $(basename $@) README.md && \
+		tar -rf $(basename $@) --strip-components 1 $< && \
+		gzip -9 $(basename $@)
 
-bin/goon-$(VERSION).linux.mips64: bin
-	env GOOS=linux GOARCH=mips64 CGO_ENABLED=0 go build $(LDFLAGS) -o $@
-
-bin/goon-$(VERSION).linux.amd64: bin
-	env GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build $(LDFLAGS) -o $@
-
-bin/goon-$(VERSION).linux.386: bin
-	env GOOS=linux GOARCH=386 CGO_ENABLED=0 go build $(LDFLAGS) -o $@
-
-bin/goon-$(VERSION).linux.arm64: bin
-	env GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build $(LDFLAGS) -o $@
-
-bin/goon-$(VERSION).windows.amd64.exe: bin
-	env GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build $(LDFLAGS) -o $@
-
-bin/goon-$(VERSION).darwin.amd64: bin
-	env GOOS=darwin GOARCH=amd64 CGO_ENABLED=0 go build $(LDFLAGS) -o $@
-
-bin/goon-$(VERSION).freebsd.amd64: bin
-	env GOOS=freebsd GOARCH=amd64 CGO_ENABLED=0 go build $(LDFLAGS) -o $@
+deps-vendor:
+	go mod vendor
+deps-cleanup:
+	go mod tidy
 
 bin:
 	mkdir $@
+
+report: report-cyclo report-staticcheck report-mispell report-ineffassign report-vet report-golangci-lint
+report-cyclo:
+	@echo '####################################################################'
+	gocyclo ./main.go
+report-mispell:
+	@echo '####################################################################'
+	misspell .
+report-lint:
+	@echo '####################################################################'
+	golint .
+report-ineffassign:
+	@echo '####################################################################'
+	ineffassign .
+report-vet:
+	@echo '####################################################################'
+	go vet .
+report-staticcheck:
+	@echo '####################################################################'
+	staticcheck .
+report-golangci-lint:
+	@echo '####################################################################'
+	golangci-lint run
+
+fetch-report-tools:
+	go install github.com/fzipp/gocyclo/cmd/gocyclo@latest
+	go install github.com/client9/misspell/cmd/misspell@latest
+	go install github.com/gordonklaus/ineffassign@latest
+	go install honnef.co/go/tools/cmd/staticcheck@latest
+	go install golang.org/x/lint/golint@latest
+
+.PHONY: bin/goon
