@@ -1,18 +1,5 @@
 package main
 
-// goon <spec>
-//
-// continues processing current shell executing at <spec>. it is similar to
-// sleep(1) and at(1).
-//
-// @hour - run at next full hour
-// @minute - run at next full minute
-// @tens - run at the next full 10 minutes
-// @quarter - run at the next quarter
-// :15 - continue at <current_hour>:15
-// 20:15 - go on at 20:15
-// 11:15PM - go on at 11:15PM
-
 import (
 	"fmt"
 	"os"
@@ -20,25 +7,37 @@ import (
 	"time"
 )
 
+const (
+    errFmtCantParse string = "can't parse %q"
+)
+
 func main() {
 
-	if len(os.Args) < 2 {
-		fmt.Println("usage: goon <spec>")
+	if len(os.Args) < 2 || os.Args[1] == "-h" || os.Args[1] == "--help" {
+		printUsage()
 		os.Exit(0)
 	}
+    if os.Args[1] == "-v" || os.Args[1] == "--version" {
+		printVersion()
+		os.Exit(0)
+    }
 
 	spec := strings.TrimSpace(os.Args[1])
 	t := time.Now()
 	when, err := parse(spec, t)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error: %s", err)
+		os.Exit(1)
+	}
 	dur := when.Sub(t)
 
-	fmt.Println("go on at", when, "; in", dur, err)
+	fmt.Println("go on at", when, "; in", dur)
 	time.Sleep(dur)
 }
 
 func parse(spec string, t time.Time) (time.Time, error) {
 	if len(spec) == 0 {
-		return t, fmt.Errorf("can't parse %q", spec)
+		return t, fmt.Errorf(errFmtCantParse, spec)
 	}
 
 	// shortcuts
@@ -70,7 +69,7 @@ func parseAtSpec(spec string, t time.Time) (time.Time, error) {
 		return parseAsTime("12:00", t)
 	}
 
-	return time.Time{}, fmt.Errorf("can't parse %q", spec)
+	return time.Time{}, fmt.Errorf(errFmtCantParse, spec)
 }
 
 func parseAsTime(spec string, t time.Time) (time.Time, error) {
@@ -89,5 +88,5 @@ func parseAsTime(spec string, t time.Time) (time.Time, error) {
 	if nt, err := time.Parse(time.RFC3339, spec); err == nil {
 		return nt, nil
 	}
-	return t, fmt.Errorf("can't parse %q", spec)
+	return t, fmt.Errorf(errFmtCantParse, spec)
 }
